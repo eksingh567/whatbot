@@ -1,56 +1,39 @@
-# WhatBot
+# whatbot
 
-A **fast and free WhatsApp sender** built with Python + Tkinter + `pywhatkit`, inspired by your reference script.
+A fast, free WhatsApp bulk sender desktop app using **Python + Tkinter + WhatsApp Web**.
 
 ## Features
-
-- Load contacts from **Excel or CSV** (`phone`, `name` columns)
-- Personalize messages with `{name}`
-- Optional headers/footers
-- Send text-only messages or text + media
-- Real-time status table (`Pending`, `Sending`, `Sent`, `Failed`)
-- One-click WhatsApp Web opener
+- Load contacts from CSV/XLSX (`phone` required, `name` optional)
+- Personalized messages with `{name}` placeholder
+- Optional headers and footers
+- Optional image/media sending
+- Status table (`Pending`, `Sending`, `Sent`, `Failed`)
+- Randomized send delay (min/max) to reduce spam-like timing
 
 ## Quick start
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python whatbot.py
-```
+1. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Run:
+   ```bash
+   python whatsapp_bot.py
+   ```
+3. WhatsApp Web opens automatically.
+4. Scan QR from your phone.
+5. Load contacts and click **START SENDING**.
 
 ## Contacts format
+Use CSV/XLSX with these columns:
 
-Use a file with columns:
+| phone | name |
+|---|---|
+| 919999999999 | Alex |
+| +1 (555) 123-4567 | Sam |
 
-| phone        | name      |
-|--------------|-----------|
-| +91 99999... | Alex      |
-| 9198888....  | Priya     |
+The app strips non-numeric characters from `phone` automatically.
 
-Notes:
-- `phone` is required
-- `name` is optional
-- Non-digit characters are removed automatically from phone numbers
-
-## How to use
-
-1. Click **Open WhatsApp Web** and scan QR.
-2. Click **Load Contacts** and choose your Excel/CSV file.
-3. (Optional) Add media files.
-4. Write your message using `{name}` if needed.
-5. Tune **Delay** and **Wait** for speed/stability.
-6. Click **START SENDING**.
-
-## Performance tips
-
-- Keep `Delay` low (e.g., 6–10 sec) for faster bulk sends.
-- Increase `Wait` (20–35 sec) on slower machines/network.
-- Keep Chrome logged into WhatsApp Web for best reliability.
-
-## Important
-
-Use this responsibly:
-- Only message users who have opted in.
-- Respect WhatsApp policies and local anti-spam regulations.
+## Notes
+- Keep WhatsApp Web open while sending.
+- This tool uses `pywhatkit`, so speed depends on browser/web timing.
+- Use responsibly and follow WhatsApp policies.
