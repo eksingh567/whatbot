@@ -33,6 +33,7 @@ class WhatsAppBotApp:
         self.sending = False
 
         self.driver = None
+        self.ui_closed = False
 
         self.use_headers = tk.BooleanVar(value=True)
         self.use_footers = tk.BooleanVar(value=True)
@@ -218,18 +219,33 @@ class WhatsAppBotApp:
             self.media_list.insert(tk.END, os.path.basename(path))
 
     def clear_sent(self):
+        phone_by_row = {row_id: phone for phone, row_id in self.row_map.items()}
         for row in self.table.get_children():
             if self.table.set(row, "Status").startswith("Sent"):
                 self.table.delete(row)
+                phone = phone_by_row.get(row)
+                if phone:
+                    self.row_map.pop(phone, None)
 
     def update_status(self, phone: str, text: str):
+        if self.ui_closed:
+            return
         self.root.after(0, lambda: self._update_row(phone, text))
 
     def _update_row(self, phone: str, text: str):
+        if self.ui_closed:
+            return
         row_id = self.row_map.get(phone)
         if row_id:
-            self.table.set(row_id, "Status", text)
-            self.table.see(row_id)
+            try:
+                if self.table.exists(row_id):
+                    self.table.set(row_id, "Status", text)
+                    self.table.see(row_id)
+                else:
+                    self.row_map.pop(phone, None)
+            except tk.TclError:
+                # Row/table can disappear while worker thread is still posting updates.
+                self.row_map.pop(phone, None)
 
     def start_sending(self):
         if self.sending:
@@ -325,6 +341,7 @@ class WhatsAppBotApp:
         self.root.after(0, lambda: self.start_btn.config(state="normal"))
 
     def on_close(self):
+        self.ui_closed = True
         if self.driver is not None:
             try:
                 self.driver.quit()
