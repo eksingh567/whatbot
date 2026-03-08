@@ -1,0 +1,6 @@
+pandas
+pywhatkit
+openpyxl
+pyautogui
+pygetwindow
+Pillow
