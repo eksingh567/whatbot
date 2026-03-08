@@ -1,0 +1,4 @@
+pandas
+pywhatkit
+openpyxl
+selenium
