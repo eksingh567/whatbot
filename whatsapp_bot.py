@@ -4,6 +4,7 @@ import threading
 import time
 import webbrowser
 from dataclasses import dataclass
+from urllib.parse import quote
 
 import pandas as pd
 import pywhatkit as kit
@@ -18,7 +19,7 @@ class Contact:
 
 
 class WhatsAppBotApp:
-    """Desktop WhatsApp sender that uses WhatsApp Web + pywhatkit."""
+    """Desktop WhatsApp sender with fast Selenium mode + pywhatkit fallback."""
 
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -31,20 +32,21 @@ class WhatsAppBotApp:
         self.media_files: list[str] = []
         self.sending = False
 
+        self.driver = None
+
         self.use_headers = tk.BooleanVar(value=True)
         self.use_footers = tk.BooleanVar(value=True)
         self.use_names = tk.BooleanVar(value=True)
         self.send_media = tk.BooleanVar(value=False)
+        self.mode_var = tk.StringVar(value="Fast (Selenium)")
 
         self._build_ui()
 
     def _build_ui(self):
         main = tk.Frame(self.root, bg="#f4f6f8")
         main.pack(fill="both", expand=True, padx=12, pady=12)
-
         left = tk.Frame(main, bg="#f4f6f8")
         left.pack(side="left", fill="both", expand=True)
-
         right = tk.Frame(main, bg="#f4f6f8")
         right.pack(side="right", fill="both", expand=True)
 
@@ -77,32 +79,34 @@ class WhatsAppBotApp:
             ("Use Headers", self.use_headers),
             ("Use Footers", self.use_footers),
             ("Personalize with Names", self.use_names),
-            ("Send Media (all selected files)", self.send_media),
+            ("Send Media (uses pywhatkit fallback)", self.send_media),
         ]:
             tk.Checkbutton(left, text=label, variable=var, bg="#f4f6f8").pack(anchor="w")
 
         controls = tk.Frame(left, bg="#f4f6f8")
         controls.pack(fill="x", pady=8)
-
         tk.Button(controls, text="Open WhatsApp Web", command=self.open_whatsapp_web, bg="#3498db", fg="white").grid(row=0, column=0, padx=4)
         tk.Button(controls, text="Load Contacts (CSV/XLSX)", command=self.pick_contacts_file).grid(row=0, column=1, padx=4)
         tk.Button(controls, text="Add Media", command=self.pick_media_files).grid(row=0, column=2, padx=4)
+
+        mode_frame = tk.Frame(left, bg="#f4f6f8")
+        mode_frame.pack(anchor="w", pady=(4, 2))
+        tk.Label(mode_frame, text="Send Mode", bg="#f4f6f8").grid(row=0, column=0, padx=(0, 4))
+        ttk.Combobox(mode_frame, textvariable=self.mode_var, values=["Fast (Selenium)", "Compatible (PyWhatKit)"], width=24, state="readonly").grid(row=0, column=1)
 
         settings = tk.Frame(left, bg="#f4f6f8")
         settings.pack(anchor="w", pady=6)
         tk.Label(settings, text="Wait Time", bg="#f4f6f8").grid(row=0, column=0)
         self.wait_entry = tk.Entry(settings, width=6)
-        self.wait_entry.insert(0, "20")
+        self.wait_entry.insert(0, "12")
         self.wait_entry.grid(row=0, column=1, padx=4)
-
         tk.Label(settings, text="Delay Min", bg="#f4f6f8").grid(row=0, column=2)
         self.delay_min_entry = tk.Entry(settings, width=6)
-        self.delay_min_entry.insert(0, "6")
+        self.delay_min_entry.insert(0, "2")
         self.delay_min_entry.grid(row=0, column=3, padx=4)
-
         tk.Label(settings, text="Delay Max", bg="#f4f6f8").grid(row=0, column=4)
         self.delay_max_entry = tk.Entry(settings, width=6)
-        self.delay_max_entry.insert(0, "12")
+        self.delay_max_entry.insert(0, "5")
         self.delay_max_entry.grid(row=0, column=5, padx=4)
 
         btn_frame = tk.Frame(left, bg="#f4f6f8")
@@ -119,7 +123,6 @@ class WhatsAppBotApp:
         table_frame.pack(fill="both", expand=True)
         scrollbar = tk.Scrollbar(table_frame)
         scrollbar.pack(side="right", fill="y")
-
         cols = ("Phone", "Name", "Status")
         self.table = ttk.Treeview(table_frame, columns=cols, show="headings", yscrollcommand=scrollbar.set)
         for col, width in [("Phone", 180), ("Name", 160), ("Status", 300)]:
@@ -132,9 +135,45 @@ class WhatsAppBotApp:
         self.media_list = tk.Listbox(right, height=6)
         self.media_list.pack(fill="x")
 
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def _is_fast_mode(self) -> bool:
+        return self.mode_var.get().startswith("Fast")
+
+    def _ensure_driver(self):
+        if self.driver is not None:
+            return
+        try:
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options
+        except Exception as exc:
+            raise RuntimeError("Fast mode needs selenium. Run: pip install selenium") from exc
+
+        options = Options()
+        options.add_argument("--start-maximized")
+        options.add_argument(f"--user-data-dir={os.path.abspath('.whatsapp_profile')}")
+        self.driver = webdriver.Chrome(options=options)
+
+    def _wait_until_logged_in(self, timeout=120):
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+
+        WebDriverWait(self.driver, timeout).until(
+            EC.presence_of_element_located((By.XPATH, "//div[@id='pane-side']"))
+        )
+
     def open_whatsapp_web(self):
-        messagebox.showinfo("Login", "WhatsApp Web will open now. Scan QR and keep browser open.")
-        webbrowser.open("https://web.whatsapp.com")
+        if self._is_fast_mode():
+            try:
+                self._ensure_driver()
+                self.driver.get("https://web.whatsapp.com")
+                messagebox.showinfo("Login", "Scan QR in the opened browser (first time only).")
+            except Exception as exc:
+                messagebox.showerror("Fast mode error", str(exc))
+        else:
+            messagebox.showinfo("Login", "WhatsApp Web will open now. Scan QR and keep browser open.")
+            webbrowser.open("https://web.whatsapp.com")
 
     def pick_contacts_file(self):
         path = filedialog.askopenfilename(filetypes=[("Data files", "*.csv *.xlsx *.xls")])
@@ -147,11 +186,7 @@ class WhatsAppBotApp:
             messagebox.showerror("Load failed", str(exc))
 
     def load_contacts(self, path: str):
-        if path.lower().endswith(".csv"):
-            df = pd.read_csv(path, dtype=str)
-        else:
-            df = pd.read_excel(path, dtype=str)
-
+        df = pd.read_csv(path, dtype=str) if path.lower().endswith(".csv") else pd.read_excel(path, dtype=str)
         df.columns = df.columns.str.strip().str.lower()
         if "phone" not in df.columns:
             raise ValueError("Contacts file must include a 'phone' column.")
@@ -162,15 +197,13 @@ class WhatsAppBotApp:
 
         seen = set()
         for _, row in df.iterrows():
-            raw_phone = str(row.get("phone", "")).strip()
-            phone = "".join(ch for ch in raw_phone if ch.isdigit())
+            phone = "".join(ch for ch in str(row.get("phone", "")).strip() if ch.isdigit())
             if not phone or phone in seen:
                 continue
             seen.add(phone)
             name = str(row.get("name", "")).strip()
             if name.lower() == "nan":
                 name = ""
-
             self.contacts.append(Contact(phone=phone, name=name))
             row_id = self.table.insert("", "end", values=(phone, name, "Pending"))
             self.row_map[phone] = row_id
@@ -186,18 +219,17 @@ class WhatsAppBotApp:
 
     def clear_sent(self):
         for row in self.table.get_children():
-            status = self.table.set(row, "Status")
-            if status.startswith("Sent"):
+            if self.table.set(row, "Status").startswith("Sent"):
                 self.table.delete(row)
 
     def update_status(self, phone: str, text: str):
-        def _update():
-            row_id = self.row_map.get(phone)
-            if row_id:
-                self.table.set(row_id, "Status", text)
-                self.table.see(row_id)
+        self.root.after(0, lambda: self._update_row(phone, text))
 
-        self.root.after(0, _update)
+    def _update_row(self, phone: str, text: str):
+        row_id = self.row_map.get(phone)
+        if row_id:
+            self.table.set(row_id, "Status", text)
+            self.table.see(row_id)
 
     def start_sending(self):
         if self.sending:
@@ -205,7 +237,6 @@ class WhatsAppBotApp:
         if not self.contacts:
             messagebox.showerror("No contacts", "Load contacts first.")
             return
-
         self.sending = True
         self.start_btn.config(state="disabled")
         threading.Thread(target=self._send_loop, daemon=True).start()
@@ -218,19 +249,43 @@ class WhatsAppBotApp:
         chunks = []
         if self.use_headers.get():
             headers = [self.header1.get(), self.header2.get(), self.header3.get()]
-            clean_headers = [h.replace("{name}", name).strip() for h in headers if h.strip()]
-            if clean_headers:
-                chunks.append("\n".join(clean_headers))
-
+            chunks.extend([h.replace("{name}", name).strip() for h in headers if h.strip()])
         chunks.append(message)
-
         if self.use_footers.get():
             footers = [self.footer1.get(), self.footer2.get(), self.footer3.get()]
-            clean_footers = [f.strip() for f in footers if f.strip()]
-            if clean_footers:
-                chunks.append("\n".join(clean_footers))
+            chunks.extend([f.strip() for f in footers if f.strip()])
+        return "\n".join(chunks).strip()
 
-        return "\n\n".join(chunks).strip()
+    def _send_via_selenium(self, phone: str, message: str):
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+
+        self.driver.get(f"https://web.whatsapp.com/send?phone={phone}&text={quote(message)}")
+        send_btn = WebDriverWait(self.driver, 30).until(
+            EC.element_to_be_clickable((By.XPATH, "//button[@aria-label='Send'] | //span[@data-icon='send']/ancestor::button"))
+        )
+        send_btn.click()
+
+    def _send_via_pywhatkit(self, phone: str, message: str, wait_time: int):
+        if self.send_media.get() and self.media_files:
+            for media in self.media_files:
+                kit.sendwhats_image(
+                    receiver=f"+{phone}",
+                    img_path=media,
+                    caption=message,
+                    wait_time=wait_time,
+                    tab_close=True,
+                    close_time=2,
+                )
+        else:
+            kit.sendwhatmsg_instantly(
+                phone_no=f"+{phone}",
+                message=message,
+                wait_time=wait_time,
+                tab_close=True,
+                close_time=2,
+            )
 
     def _send_loop(self):
         try:
@@ -239,8 +294,13 @@ class WhatsAppBotApp:
             delay_max = int(self.delay_max_entry.get())
             if delay_min > delay_max:
                 delay_min, delay_max = delay_max, delay_min
-        except ValueError:
-            self.root.after(0, lambda: messagebox.showerror("Invalid settings", "Wait/delay values must be integers."))
+
+            if self._is_fast_mode():
+                self._ensure_driver()
+                self.driver.get("https://web.whatsapp.com")
+                self._wait_until_logged_in()
+        except Exception as exc:
+            self.root.after(0, lambda: messagebox.showerror("Startup error", str(exc)))
             self._sending_done()
             return
 
@@ -248,29 +308,13 @@ class WhatsAppBotApp:
             message = self._compose_message(contact.name)
             self.update_status(contact.phone, "Sending...")
             try:
-                if self.send_media.get() and self.media_files:
-                    for media in self.media_files:
-                        kit.sendwhats_image(
-                            receiver=f"+{contact.phone}",
-                            img_path=media,
-                            caption=message,
-                            wait_time=wait_time,
-                            tab_close=True,
-                            close_time=3,
-                        )
+                if self._is_fast_mode() and not (self.send_media.get() and self.media_files):
+                    self._send_via_selenium(contact.phone, message)
                 else:
-                    kit.sendwhatmsg_instantly(
-                        phone_no=f"+{contact.phone}",
-                        message=message,
-                        wait_time=wait_time,
-                        tab_close=True,
-                        close_time=3,
-                    )
-
+                    self._send_via_pywhatkit(contact.phone, message, wait_time)
                 self.update_status(contact.phone, "Sent ✓")
             except Exception as exc:
                 self.update_status(contact.phone, f"Failed ✗ ({exc})")
-
             time.sleep(random.randint(delay_min, delay_max))
 
         self.root.after(0, lambda: messagebox.showinfo("Done", f"Finished for {len(self.contacts)} contacts."))
@@ -279,6 +323,14 @@ class WhatsAppBotApp:
     def _sending_done(self):
         self.sending = False
         self.root.after(0, lambda: self.start_btn.config(state="normal"))
+
+    def on_close(self):
+        if self.driver is not None:
+            try:
+                self.driver.quit()
+            except Exception:
+                pass
+        self.root.destroy()
 
 
 def main():
