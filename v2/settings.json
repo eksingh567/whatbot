@@ -1,0 +1,21 @@
+{
+    "theme": "dark",
+    "message": "Hello {name},\nThis is a personalized message from WhatBot.",
+    "headers": [
+        "Hello Team",
+        "*{name}*",
+        ""
+    ],
+    "footers": [
+        "",
+        "Have a great day.",
+        "*Your Team*"
+    ],
+    "use_headers": true,
+    "use_footers": true,
+    "use_names": true,
+    "delay_min": 5,
+    "delay_max": 15,
+    "wait_time": 12,
+    "mode": "Fast (Selenium)"
+}

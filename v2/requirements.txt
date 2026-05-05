@@ -1,0 +1,7 @@
+pandas
+pywhatkit
+openpyxl
+selenium
+customtkinter
+webdriver-manager
+packaging
